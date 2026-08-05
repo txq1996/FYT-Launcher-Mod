@@ -40,8 +40,18 @@ jobs:
           TAG="${{ steps.tag.outputs.value }}"
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Rename APK
-        run: mv app/build/outputs/apk/release/app-release.apk FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk
+      - name: Sign and rename APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" sign \
+            --ks app/keystore.jks \
+            --ks-key-alias android \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk \
+            "$APK"
+          "$APKSIGNER" verify --print-certs FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
