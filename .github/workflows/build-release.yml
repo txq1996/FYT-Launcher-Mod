@@ -25,7 +25,9 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build release APK
-        run: ./gradlew assembleRelease
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
       - name: Compute tag from last commit date
         id: tag
