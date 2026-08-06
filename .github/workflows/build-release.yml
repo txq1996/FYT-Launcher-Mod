@@ -47,7 +47,7 @@ jobs:
           TAG="${{ steps.tag.outputs.value }}"
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Sign and rename APK
+      - name: Sign and rename APK (system/车机版)
         run: |
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
@@ -60,6 +60,36 @@ jobs:
             "$APK"
           "$APKSIGNER" verify --print-certs FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk
 
+      - name: Prepare phone (non-privileged) manifest
+        run: |
+          # Remove system-only attributes so the APK also installs on normal
+          # phones/emulators (same process as the released phone builds):
+          # 1. drop sharedUserId="android.uid.system" (its trailing '>' moves to the tools line)
+          sed -i '/android:sharedUserId="android.uid.system"/d' app/src/main/AndroidManifest.xml
+          sed -i 's|    xmlns:tools="http://schemas.android.com/tools"$|    xmlns:tools="http://schemas.android.com/tools">|' app/src/main/AndroidManifest.xml
+          # 2. drop the system permission group attributes
+          sed -i '/android:permissionGroup="android.permission-group.SYSTEM_TOOLS"/d' app/src/main/AndroidManifest.xml
+          echo "Remaining system-only attributes:"
+          grep -c "sharedUserId\|permissionGroup" app/src/main/AndroidManifest.xml || true
+
+      - name: Build phone release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Sign phone APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" sign \
+            --ks app/keystore.jks \
+            --ks-key-alias android \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out FYT-Launcher-Mod-phone-${{ steps.tag.outputs.value }}.apk \
+            "$APK"
+          "$APKSIGNER" verify --print-certs FYT-Launcher-Mod-phone-${{ steps.tag.outputs.value }}.apk
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -68,7 +98,12 @@ jobs:
           body: |
             Auto build from commit `${{ steps.tag.outputs.fullsha }}`
             Last commit: ${{ steps.tag.outputs.msg }}
-          files: FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk
+
+            - 车机版 (system): `FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk`
+            - 手机版 (phone, non-privileged): `FYT-Launcher-Mod-phone-${{ steps.tag.outputs.value }}.apk`
+          files: |
+            FYT-Launcher-Mod-${{ steps.tag.outputs.value }}.apk
+            FYT-Launcher-Mod-phone-${{ steps.tag.outputs.value }}.apk
 
       - name: Cleanup old releases (keep only the latest)
         env:
